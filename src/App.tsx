@@ -3,6 +3,8 @@ import {
   frequencyToPitch,
   detectPitchYin,
   INSTRUMENT_PRESETS,
+  playReferenceTone,
+  loadCustomTunings,
 } from './core/pitch-detector';
 import { DetectedPitch, InstrumentPreset } from './types';
 import { StrobeMeter } from './components/StrobeMeter';
@@ -12,15 +14,20 @@ import {
   MicOff,
   Sliders,
   Sparkles,
+  Volume2,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'tuner' | 'metronome' | 'both'>('both');
   const [a4Calibration, setA4Calibration] = useState<number>(440);
+  const [customTunings] = useState<InstrumentPreset[]>(() => loadCustomTunings());
+  const allPresets = [...INSTRUMENT_PRESETS, ...customTunings];
   const [selectedPreset, setSelectedPreset] = useState<InstrumentPreset>(INSTRUMENT_PRESETS[1]); // Guitar Standard
   const [isListening, setIsListening] = useState(false);
   const [detectedPitch, setDetectedPitch] = useState<DetectedPitch | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
+  const [isPlayingRefTone, setIsPlayingRefTone] = useState(false);
+  const stopToneRef = useRef<(() => void) | null>(null);
 
   // Stage flash state
   const [flashType, setFlashType] = useState<'accent' | 'beat' | null>(null);
@@ -104,24 +111,16 @@ export const App: React.FC = () => {
     animFrameIdRef.current = requestAnimationFrame(processAudio);
   };
 
-  // Play a reference tone synthesized
-  const playReferenceTone = (freq: number) => {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
-
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.5);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    osc.stop(ctx.currentTime + 1.5);
+  // Play acoustic reference tone synthesized with warm overtones
+  const handlePlayReferenceTone = (freq: number) => {
+    if (stopToneRef.current) {
+      stopToneRef.current();
+      stopToneRef.current = null;
+      setIsPlayingRefTone(false);
+    }
+    stopToneRef.current = playReferenceTone(freq, 2.5, true);
+    setIsPlayingRefTone(true);
+    setTimeout(() => setIsPlayingRefTone(false), 2500);
   };
 
   // Simulated note generator for quick testing without mic
@@ -269,7 +268,7 @@ export const App: React.FC = () => {
           <div className="flex flex-col items-center gap-4 w-full max-w-md">
             {/* Instrument preset selection pills */}
             <div className="flex flex-wrap items-center justify-center gap-1.5 w-full">
-              {INSTRUMENT_PRESETS.map((preset) => (
+              {allPresets.map((preset) => (
                 <button
                   key={preset.id}
                   onClick={() => setSelectedPreset(preset)}
@@ -290,12 +289,15 @@ export const App: React.FC = () => {
             {/* String target buttons if preset has notes */}
             {selectedPreset.notes.length > 0 && (
               <div className="flex items-center justify-center gap-2 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-2.5 w-full">
-                <span className="text-xs text-zinc-500 font-mono mr-1">Cordas:</span>
+                <div className="flex items-center gap-1 text-xs text-zinc-500 font-mono mr-1">
+                  <Volume2 className={`w-3.5 h-3.5 ${isPlayingRefTone ? 'text-emerald-400 animate-pulse' : 'text-zinc-500'}`} />
+                  <span>Tom:</span>
+                </div>
                 {selectedPreset.notes.map((n, idx) => (
                   <button
                     key={idx}
                     onClick={() => {
-                      playReferenceTone(n.freq);
+                      handlePlayReferenceTone(n.freq);
                       triggerSimulationNote(n.freq);
                     }}
                     className={`flex flex-col items-center px-3 py-1.5 rounded-xl border text-xs font-mono transition group ${
@@ -303,7 +305,7 @@ export const App: React.FC = () => {
                         ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 font-bold scale-105'
                         : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:border-zinc-700'
                     }`}
-                    title="Clique para ouvir o tom de referência e calibrar de ouvido"
+                    title="Clique para ouvir o tom acústico de referência com harmônicos e afinar de ouvido"
                   >
                     <span className="text-sm font-bold">
                       {n.name}

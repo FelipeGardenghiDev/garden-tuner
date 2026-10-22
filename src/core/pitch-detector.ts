@@ -39,13 +39,6 @@ export function frequencyToPitch(freq: number, a4: number = 440): DetectedPitch 
 /**
  * Canonical YIN Pitch Detection Algorithm
  * (Alain de Cheveigné & Hideki Kawahara, 2002)
- *
- * Steps:
- * 1. RMS Energy Gate (silence rejection)
- * 2. Difference Function d(tau)
- * 3. Cumulative Mean Normalized Difference Function d'(tau)
- * 4. Absolute Thresholding (tau selection without octave error)
- * 5. Parabolic Interpolation for sub-bin frequency accuracy
  */
 export function detectPitchYin(
   buffer: Float32Array,
@@ -85,55 +78,55 @@ export function detectPitchYin(
     yinBuffer[tau] = (yinBuffer[tau] * tau) / runningSum;
   }
 
-  // 4. Absolute threshold search: find first tau below threshold
-  let tauCandidate = -1;
+  // 4. Absolute thresholding
+  let tauEstimate = -1;
   for (let tau = 2; tau < halfBufferSize; tau++) {
     if (yinBuffer[tau] < threshold) {
       while (tau + 1 < halfBufferSize && yinBuffer[tau + 1] < yinBuffer[tau]) {
         tau++;
       }
-      tauCandidate = tau;
+      tauEstimate = tau;
       break;
     }
   }
 
-  // If no tau was below threshold, find global minimum as fallback
-  if (tauCandidate === -1) {
-    let minTau = 2;
-    let minVal = yinBuffer[2];
-    for (let tau = 3; tau < halfBufferSize; tau++) {
+  // Fallback to global minimum if below threshold not found
+  if (tauEstimate === -1) {
+    let minVal = 1000;
+    for (let tau = 2; tau < halfBufferSize; tau++) {
       if (yinBuffer[tau] < minVal) {
         minVal = yinBuffer[tau];
-        minTau = tau;
+        tauEstimate = tau;
       }
     }
-    if (minVal < 0.5) {
-      tauCandidate = minTau;
-    } else {
+    if (minVal > 0.45) {
       return null;
     }
   }
 
-  // 5. Parabolic interpolation around tauCandidate
-  let betterTau = tauCandidate;
-  if (tauCandidate > 0 && tauCandidate < halfBufferSize - 1) {
-    const s0 = yinBuffer[tauCandidate - 1];
-    const s1 = yinBuffer[tauCandidate];
-    const s2 = yinBuffer[tauCandidate + 1];
-    const delta = (s2 - s0) / (2 * (2 * s1 - s2 - s0));
-    if (Math.abs(delta) < 1) {
-      betterTau += delta;
-    }
+  // 5. Parabolic interpolation
+  let betterTau: number;
+  const x0 = tauEstimate < 1 ? tauEstimate : tauEstimate - 1;
+  const x2 = tauEstimate + 1 < halfBufferSize ? tauEstimate + 1 : tauEstimate;
+
+  if (x0 === tauEstimate) {
+    betterTau = yinBuffer[tauEstimate] <= yinBuffer[x2] ? tauEstimate : x2;
+  } else if (x2 === tauEstimate) {
+    betterTau = yinBuffer[tauEstimate] <= yinBuffer[x0] ? tauEstimate : x0;
+  } else {
+    const s0 = yinBuffer[x0];
+    const s1 = yinBuffer[tauEstimate];
+    const s2 = yinBuffer[x2];
+    betterTau = tauEstimate + (s2 - s0) / (2 * (2 * s1 - s2 - s0));
   }
 
-  const frequency = sampleRate / betterTau;
-  if (frequency < 30 || frequency > 3000) {
-    return null;
-  }
+  const pitch = sampleRate / betterTau;
+  const confidence = 1 - Math.min(1, yinBuffer[tauEstimate]);
 
-  const confidence = Math.max(0, Math.min(1, 1 - yinBuffer[tauCandidate]));
-
-  return { frequency, confidence };
+  return {
+    frequency: pitch,
+    confidence,
+  };
 }
 
 export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
@@ -167,6 +160,45 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       { name: 'G', octave: 3, freq: 196.0 },
       { name: 'B', octave: 3, freq: 246.9 },
       { name: 'E', octave: 4, freq: 329.6 },
+    ],
+  },
+  {
+    id: 'guitar-drop-c',
+    name: 'Guitarra (Drop C - CGCFAD)',
+    instrument: 'guitar',
+    notes: [
+      { name: 'C', octave: 2, freq: 65.4 },
+      { name: 'G', octave: 2, freq: 98.0 },
+      { name: 'C', octave: 3, freq: 130.8 },
+      { name: 'F', octave: 3, freq: 174.6 },
+      { name: 'A', octave: 3, freq: 220.0 },
+      { name: 'D', octave: 4, freq: 293.7 },
+    ],
+  },
+  {
+    id: 'guitar-open-g',
+    name: 'Guitarra (Open G - DGDGBD)',
+    instrument: 'guitar',
+    notes: [
+      { name: 'D', octave: 2, freq: 73.4 },
+      { name: 'G', octave: 2, freq: 98.0 },
+      { name: 'D', octave: 3, freq: 146.8 },
+      { name: 'G', octave: 3, freq: 196.0 },
+      { name: 'B', octave: 3, freq: 246.9 },
+      { name: 'D', octave: 4, freq: 293.7 },
+    ],
+  },
+  {
+    id: 'guitar-dadgad',
+    name: 'Guitarra (DADGAD Folk / Celta)',
+    instrument: 'guitar',
+    notes: [
+      { name: 'D', octave: 2, freq: 73.4 },
+      { name: 'A', octave: 2, freq: 110.0 },
+      { name: 'D', octave: 3, freq: 146.8 },
+      { name: 'G', octave: 3, freq: 196.0 },
+      { name: 'A', octave: 3, freq: 220.0 },
+      { name: 'D', octave: 4, freq: 293.7 },
     ],
   },
   {
@@ -204,3 +236,109 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
     ],
   },
 ];
+
+const CUSTOM_TUNINGS_KEY = 'garden_tuner_custom_tunings_v1';
+let memoryTunings: InstrumentPreset[] = [];
+
+export function loadCustomTunings(): InstrumentPreset[] {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem(CUSTOM_TUNINGS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    }
+  } catch {}
+  return memoryTunings;
+}
+
+export function saveCustomTuning(tuning: InstrumentPreset): void {
+  const current = loadCustomTunings().filter((t) => t.id !== tuning.id);
+  current.push(tuning);
+  memoryTunings = [...current];
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(CUSTOM_TUNINGS_KEY, JSON.stringify(current));
+    }
+  } catch {}
+}
+
+export function deleteCustomTuning(id: string): void {
+  const current = loadCustomTunings().filter((t) => t.id !== id);
+  memoryTunings = [...current];
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(CUSTOM_TUNINGS_KEY, JSON.stringify(current));
+    }
+  } catch {}
+}
+
+let activeToneStop: (() => void) | null = null;
+
+/**
+ * Generates an acoustic reference tone with natural harmonic overtone warmth.
+ */
+export function playReferenceTone(
+  freq: number,
+  durationSec: number = 3.5,
+  includeHarmonics: boolean = true
+): () => void {
+  if (activeToneStop) {
+    activeToneStop();
+  }
+
+  const AudioCtxClass =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  const ctx = new AudioCtxClass();
+
+  const masterGain = ctx.createGain();
+  masterGain.gain.setValueAtTime(0.001, ctx.currentTime);
+  masterGain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.05);
+  masterGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationSec);
+  masterGain.connect(ctx.destination);
+
+  // Fundamental oscillator
+  const osc1 = ctx.createOscillator();
+  osc1.type = 'sine';
+  osc1.frequency.setValueAtTime(freq, ctx.currentTime);
+  osc1.connect(masterGain);
+  osc1.start();
+  osc1.stop(ctx.currentTime + durationSec);
+
+  // Warm 2nd harmonic
+  if (includeHarmonics) {
+    const harmGain = ctx.createGain();
+    harmGain.gain.value = 0.3;
+    harmGain.connect(masterGain);
+
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(freq * 2, ctx.currentTime);
+    osc2.connect(harmGain);
+    osc2.start();
+    osc2.stop(ctx.currentTime + durationSec);
+  }
+
+  const stop = () => {
+    try {
+      masterGain.gain.cancelScheduledValues(ctx.currentTime);
+      masterGain.gain.setValueAtTime(masterGain.gain.value, ctx.currentTime);
+      masterGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.04);
+      setTimeout(() => {
+        ctx.close().catch(() => {});
+        activeToneStop = null;
+      }, 50);
+    } catch {}
+  };
+
+  activeToneStop = stop;
+  setTimeout(() => {
+    if (activeToneStop === stop) {
+      activeToneStop = null;
+    }
+  }, durationSec * 1000);
+
+  return stop;
+}

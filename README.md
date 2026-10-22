@@ -15,13 +15,11 @@ Parte da **Garden Suite** — ferramentas de código aberto de nível Senior/Sta
 - 🎚️ **Medidor de Cents (-50 a +50)**: Indicador visual com graduação de cor (âmbar/vermelho para desvio, verde esmeralda para afinação dentro da margem de ±3 cents).
 - 🎼 **Calibração A4 Flexível**: Suporta afinação padrão (440 Hz), afinação Verdi (432 Hz), orquestral (442 Hz) e moderna (444 Hz).
 - 🎸 **Presets de Instrumentos & Tons de Referência**:
-  - Guitarra / Violão Standard (EADGBE)
-  - Guitarra Drop D (DADGBE)
-  - Baixo 4 Cordas (EADG)
-  - Baixo 5 Cordas (BEADG)
+  - Guitarra / Violão Standard (EADGBE), Drop D (DADGBE), Drop C (CGCFAD), Open G (DGDGBD) e DADGAD (Folk / Celta)
+  - Baixo 4 Cordas (EADG) e Baixo 5 Cordas (BEADG)
   - Ukulele Soprano (GCEA)
-  - Cromático Geral
-  - Síntese de tom senoidal de referência ao clicar em cada corda.
+  - Cromático Geral e Tunings Customizados com persistência local
+  - Síntese de tom acústico de referência com harmônicos naturais ao clicar em cada corda para afinação de ouvido.
 
 ### ⏱️ Metrônomo de Palco (Web Audio Lookahead)
 - ⏳ **Lookahead Scheduling**: Elimina drift de timing típico de `setInterval` do JavaScript, agendando osciladores diretamente no clock de hardware de áudio do sistema.
@@ -29,8 +27,9 @@ Parte da **Garden Suite** — ferramentas de código aberto de nível Senior/Sta
 - 🥁 **Assinaturas Rítmicas**: 2/4, 3/4, 4/4 e 6/8 com acentuação diferenciada no primeiro tempo (High Beep 1200Hz vs 800Hz).
 - 💡 **Flash Visual de Palco (Silent / Stage Mode)**: Flash síncrono na tela em tempo real, perfeito para palcos barulhentos onde o clique de áudio não pode ser ouvido ou para apresentações silenciosas.
 
-### 📱 Portabilidade Web + APK Android
-- PWA instalável e aplicativo nativo Android empacotado via Capacitor (`@capacitor/android`).
+### 📱 Portabilidade Web + APK Android Automático
+- 🌐 **Deploy no GitHub Pages**: Executável diretamente pelo navegador em qualquer dispositivo: [https://felipegardenghidev.github.io/garden-tuner/](https://felipegardenghidev.github.io/garden-tuner/)
+- 📱 **Compilação Contínua de APK Android**: A cada commit na branch `main`, o GitHub Actions compila o APK nativo (`garden-tuner-debug-apk`) disponível para download imediato na aba **Actions**.
 - 100% Client-Side: zero envio de áudio para servidores, privacidade total e resposta em microssegundos.
 
 ---
