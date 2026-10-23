@@ -43,17 +43,18 @@ export function frequencyToPitch(freq: number, a4: number = 440): DetectedPitch 
 export function detectPitchYin(
   buffer: Float32Array,
   sampleRate: number,
-  threshold = 0.15
+  threshold = 0.15,
+  minRms = 0.005
 ): { frequency: number; confidence: number } | null {
   const bufferSize = buffer.length;
 
-  // 1. RMS Energy Gate
+  // 1. RMS Energy Gate (lowered to 0.005 for acoustic instruments, humming, and singing)
   let sumSquares = 0;
   for (let i = 0; i < bufferSize; i++) {
     sumSquares += buffer[i] * buffer[i];
   }
   const rms = Math.sqrt(sumSquares / bufferSize);
-  if (rms < 0.015) {
+  if (rms < minRms) {
     return null;
   }
 

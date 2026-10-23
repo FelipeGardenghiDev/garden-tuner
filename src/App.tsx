@@ -15,6 +15,7 @@ import {
   Sliders,
   Sparkles,
   Volume2,
+  RotateCcw,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -28,6 +29,7 @@ export const App: React.FC = () => {
   const [micError, setMicError] = useState<string | null>(null);
   const [isPlayingRefTone, setIsPlayingRefTone] = useState(false);
   const stopToneRef = useRef<(() => void) | null>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Stage flash state
   const [flashType, setFlashType] = useState<'accent' | 'beat' | null>(null);
@@ -48,17 +50,31 @@ export const App: React.FC = () => {
   const startListening = async () => {
     try {
       setMicError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          autoGainControl: false,
-          noiseSuppression: false,
-        },
-      });
+
+      // Attempt high-fidelity constraints first, fallback to basic audio
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            autoGainControl: false,
+            noiseSuppression: false,
+          },
+        });
+      } catch (constraintErr) {
+        console.warn('Advanced audio constraints not supported, falling back to basic audio', constraintErr);
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
 
       mediaStreamRef.current = stream;
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioCtx();
+
+      // Mobile Chrome / Android WebView requires explicit resume on user interaction
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+
       audioContextRef.current = audioCtx;
 
       const source = audioCtx.createMediaStreamSource(stream);
@@ -70,13 +86,17 @@ export const App: React.FC = () => {
       setIsListening(true);
       processAudio();
     } catch (err: any) {
-      console.warn('Microphone access denied or unavailable. Fallback to demo mode:', err);
-      setMicError('Permissão de microfone negada. Clique em "Modo Simulação" para testar o strobe.');
+      console.warn('Microphone access denied or unavailable:', err);
+      setMicError('Acesso ao microfone negado ou não autorizado pelo sistema. Verifique a permissão nas configurações do app.');
       setIsListening(false);
     }
   };
 
   const stopListening = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
     if (animFrameIdRef.current) {
       cancelAnimationFrame(animFrameIdRef.current);
       animFrameIdRef.current = null;
@@ -104,8 +124,18 @@ export const App: React.FC = () => {
     if (pitchResult) {
       const pitch = frequencyToPitch(pitchResult.frequency, a4Calibration);
       setDetectedPitch(pitch);
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
     } else {
-      // Keep pitch for a few ms to avoid blinking, or clear
+      // Clear pitch after 350ms of silence so strobe stops gracefully
+      if (!silenceTimerRef.current) {
+        silenceTimerRef.current = setTimeout(() => {
+          setDetectedPitch(null);
+          silenceTimerRef.current = null;
+        }, 350);
+      }
     }
 
     animFrameIdRef.current = requestAnimationFrame(processAudio);
@@ -138,7 +168,7 @@ export const App: React.FC = () => {
 
   return (
     <div
-      className={`min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans transition-colors duration-100 ${
+      className={`min-h-screen min-h-[100dvh] bg-zinc-950 text-zinc-100 flex flex-col font-sans transition-colors duration-100 ${
         flashType === 'accent'
           ? 'bg-rose-950/40'
           : flashType === 'beat'
@@ -146,54 +176,80 @@ export const App: React.FC = () => {
           : ''
       }`}
     >
-      {/* Top Header */}
-      <header className="h-16 border-b border-zinc-800 bg-zinc-900/90 backdrop-blur px-6 flex items-center justify-between z-20">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🎸</span>
-          <div className="flex items-center gap-2">
-            <h1 className="font-bold text-base tracking-tight text-zinc-100">Garden Tuner</h1>
-            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-              DSP Strobe + Metronome
-            </span>
+      {/* Top Header with Safe Area Insets */}
+      <header className="safe-header border-b border-zinc-800 bg-zinc-900/90 backdrop-blur z-20 flex flex-col md:flex-row items-center justify-between gap-3 pb-3 md:pb-0 md:h-16">
+        <div className="flex items-center justify-between w-full md:w-auto gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="text-2xl select-none">🎸</span>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h1 className="font-bold text-sm sm:text-base tracking-tight text-zinc-100">Garden Tuner</h1>
+                <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  DSP Strobe
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick controls on mobile top bar */}
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              onClick={isListening ? stopListening : startListening}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs tracking-wide transition shadow-lg ${
+                isListening
+                  ? 'bg-rose-600 active:bg-rose-700 text-white shadow-rose-600/30'
+                  : 'bg-emerald-600 active:bg-emerald-700 text-white shadow-emerald-600/30'
+              }`}
+            >
+              {isListening ? (
+                <>
+                  <MicOff className="w-3.5 h-3.5" /> PARAR
+                </>
+              ) : (
+                <>
+                  <Mic className="w-3.5 h-3.5" /> OUVIR
+                </>
+              )}
+            </button>
           </div>
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-xs">
+        <div className="flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-xs w-full md:w-auto justify-center">
           <button
             onClick={() => setActiveTab('tuner')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition ${
+            className={`flex-1 md:flex-initial px-3 py-1.5 rounded-lg font-medium transition text-center ${
               activeTab === 'tuner'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            Afinador Strobe
+            Afinador
           </button>
           <button
             onClick={() => setActiveTab('metronome')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition ${
+            className={`flex-1 md:flex-initial px-3 py-1.5 rounded-lg font-medium transition text-center ${
               activeTab === 'metronome'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            Metrônomo de Palco
+            Metrônomo
           </button>
           <button
             onClick={() => setActiveTab('both')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition ${
+            className={`flex-1 md:flex-initial px-3 py-1.5 rounded-lg font-medium transition text-center ${
               activeTab === 'both'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            Modo Dual (Palco)
+            Modo Dual
           </button>
         </div>
 
-        {/* Calibration & Mic Toggle */}
-        <div className="flex items-center gap-3">
+        {/* Calibration & Mic Toggle (Desktop / Tablet) */}
+        <div className="hidden md:flex items-center gap-3">
           {/* A4 Pitch Calibration */}
           <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded-xl px-2.5 py-1 text-xs">
             <Sliders className="w-3.5 h-3.5 text-zinc-400" />
@@ -240,29 +296,63 @@ export const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Mic Warning if needed */}
+      {/* Mobile Calibration Row */}
+      <div className="md:hidden flex items-center justify-between px-4 py-1.5 bg-zinc-900/60 border-b border-zinc-800/80 text-xs">
+        <div className="flex items-center gap-1.5 font-mono text-zinc-400">
+          <Sliders className="w-3.5 h-3.5 text-zinc-400" />
+          <span>A4:</span>
+          <select
+            value={a4Calibration}
+            onChange={(e) => setA4Calibration(Number(e.target.value))}
+            className="bg-transparent text-emerald-400 font-bold cursor-pointer focus:outline-none"
+          >
+            <option value="440" className="bg-zinc-900">440 Hz</option>
+            <option value="432" className="bg-zinc-900">432 Hz</option>
+            <option value="442" className="bg-zinc-900">442 Hz</option>
+            <option value="444" className="bg-zinc-900">444 Hz</option>
+          </select>
+        </div>
+        <div className="text-[11px] text-zinc-500 font-mono">
+          {isListening ? (
+            <span className="text-emerald-400 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+              Captando áudio
+            </span>
+          ) : (
+            <span>Mic inativo</span>
+          )}
+        </div>
+      </div>
+
+      {/* Mic Warning & Simulation banner */}
       {micError && (
-        <div className="bg-amber-950/50 border-b border-amber-800/60 px-6 py-2 flex items-center justify-between text-xs text-amber-200">
-          <span>{micError}</span>
+        <div className="bg-amber-950/60 border-b border-amber-800/80 px-4 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-amber-200">
+          <span className="text-center sm:text-left">{micError}</span>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => triggerSimulationNote(82.4)} // E2
-              className="px-2 py-0.5 rounded bg-amber-600 text-white hover:bg-amber-500"
+              onClick={startListening}
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600 text-white font-medium hover:bg-emerald-500 shadow"
             >
-              Simular E2 (82.4Hz)
+              <RotateCcw className="w-3 h-3" /> Tentar Novamente
             </button>
             <button
-              onClick={() => triggerSimulationNote(440.0)} // A4
-              className="px-2 py-0.5 rounded bg-amber-600 text-white hover:bg-amber-500"
+              onClick={() => triggerSimulationNote(82.4)}
+              className="px-2 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 hover:bg-zinc-700"
             >
-              Simular A4 (440Hz)
+              Simular E2
+            </button>
+            <button
+              onClick={() => triggerSimulationNote(440.0)}
+              className="px-2 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 hover:bg-zinc-700"
+            >
+              Simular A4
             </button>
           </div>
         </div>
       )}
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col lg:flex-row items-center justify-center p-6 gap-8 overflow-y-auto">
+      {/* Main Content Area with generous bottom clearance for Android Nav Bar */}
+      <main className="flex-1 flex flex-col lg:flex-row items-center justify-start lg:justify-center px-4 py-6 pb-28 gap-6 lg:gap-8 overflow-y-auto">
         {/* Tuner Panel */}
         {(activeTab === 'tuner' || activeTab === 'both') && (
           <div className="flex flex-col items-center gap-4 w-full max-w-md">
@@ -288,10 +378,10 @@ export const App: React.FC = () => {
 
             {/* String target buttons if preset has notes */}
             {selectedPreset.notes.length > 0 && (
-              <div className="flex items-center justify-center gap-2 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-2.5 w-full">
+              <div className="flex items-center justify-center gap-1.5 sm:gap-2 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-2.5 w-full overflow-x-auto">
                 <div className="flex items-center gap-1 text-xs text-zinc-500 font-mono mr-1">
                   <Volume2 className={`w-3.5 h-3.5 ${isPlayingRefTone ? 'text-emerald-400 animate-pulse' : 'text-zinc-500'}`} />
-                  <span>Tom:</span>
+                  <span className="hidden sm:inline">Tom:</span>
                 </div>
                 {selectedPreset.notes.map((n, idx) => (
                   <button
@@ -300,18 +390,18 @@ export const App: React.FC = () => {
                       handlePlayReferenceTone(n.freq);
                       triggerSimulationNote(n.freq);
                     }}
-                    className={`flex flex-col items-center px-3 py-1.5 rounded-xl border text-xs font-mono transition group ${
+                    className={`flex flex-col items-center px-2.5 py-1.5 rounded-xl border text-xs font-mono transition group ${
                       detectedPitch?.note === n.name && detectedPitch?.octave === n.octave
                         ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 font-bold scale-105'
                         : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:border-zinc-700'
                     }`}
                     title="Clique para ouvir o tom acústico de referência com harmônicos e afinar de ouvido"
                   >
-                    <span className="text-sm font-bold">
+                    <span className="text-xs sm:text-sm font-bold">
                       {n.name}
-                      <sub className="text-[10px]">{n.octave}</sub>
+                      <sub className="text-[9px] sm:text-[10px]">{n.octave}</sub>
                     </span>
-                    <span className="text-[10px] text-zinc-500 group-hover:text-zinc-300">
+                    <span className="text-[9px] sm:text-[10px] text-zinc-500 group-hover:text-zinc-300">
                       {n.freq.toFixed(0)}Hz
                     </span>
                   </button>
@@ -329,12 +419,12 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Stage Bottom Bar */}
-      <footer className="h-10 border-t border-zinc-800/80 bg-zinc-900/40 px-6 flex items-center justify-between text-xs text-zinc-500 font-mono">
+      {/* Stage Bottom Bar with Safe Area Inset Protection */}
+      <footer className="safe-footer border-t border-zinc-800/80 bg-zinc-900/80 py-3 flex flex-col sm:flex-row items-center justify-between text-xs text-zinc-500 font-mono gap-1 text-center">
         <span>Garden Tuner & Metronome</span>
         <span className="flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-          YIN Autocorrelation DSP Engine • 100% Client-Side
+          YIN Autocorrelation Engine • Client-Side DSP
         </span>
       </footer>
     </div>
