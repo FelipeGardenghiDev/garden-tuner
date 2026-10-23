@@ -1,5 +1,11 @@
 {
   "appId": "com.gardenghi.gardentuner",
   "appName": "Garden Tuner",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#09090b"
+  }
 }

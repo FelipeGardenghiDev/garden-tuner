@@ -420,9 +420,14 @@ export const App: React.FC = () => {
       </main>
 
       {/* Stage Bottom Bar with Safe Area Inset Protection */}
-      <footer className="safe-footer border-t border-zinc-800/80 bg-zinc-900/80 py-3 flex flex-col sm:flex-row items-center justify-between text-xs text-zinc-500 font-mono gap-1 text-center">
-        <span>Garden Tuner & Metronome</span>
-        <span className="flex items-center gap-1.5">
+      <footer className="safe-footer border-t border-zinc-800/80 bg-zinc-900/80 flex flex-col sm:flex-row items-center justify-between text-xs text-zinc-500 font-mono gap-1.5 text-center">
+        <div className="flex items-center gap-2 justify-center sm:justify-start">
+          <span className="font-semibold text-zinc-400">Garden Tuner</span>
+          <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] text-emerald-400 border border-zinc-700 font-mono">
+            v0.2.1
+          </span>
+        </div>
+        <span className="flex items-center gap-1.5 justify-center sm:justify-end">
           <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
           YIN Autocorrelation Engine • Client-Side DSP
         </span>

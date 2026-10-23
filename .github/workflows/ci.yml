@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -98,3 +98,15 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish Direct APK to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk garden-tuner-v0.2.1.apk
+          gh release delete v0.2.1 --yes || true
+          git tag -d v0.2.1 || true
+          git push --delete origin v0.2.1 || true
+          gh release create v0.2.1 garden-tuner-v0.2.1.apk \
+            --title "Garden Tuner v0.2.1" \
+            --notes "Update: Native system bar insets protection, WebChromeClient audio capture bugfix and v0.2.1 badge verification"
